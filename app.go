@@ -18,6 +18,7 @@ type App struct {
 	k8sClient     *k8spkg.Client
 	logStreamer   *dockerpkg.LogStreamer
 	statsStreamer *dockerpkg.StatsStreamer
+	eventWatcher  *dockerpkg.EventWatcher
 }
 
 func NewApp() *App {
@@ -38,6 +39,8 @@ func (a *App) startup(ctx context.Context) {
 		a.logStreamer = dockerpkg.NewLogStreamer(dockerClient, a.hub)
 
 		a.statsStreamer = dockerpkg.NewStatsStreamer(dockerClient, a)
+		a.eventWatcher = dockerpkg.NewEventWatcher(dockerClient, a)
+		a.eventWatcher.Start()
 		fmt.Println("[App] Docker connected successfully")
 	}
 
@@ -53,6 +56,10 @@ func (a *App) startup(ctx context.Context) {
 // shutdown is called by Wails when the app closes.
 func (a *App) shutdown(ctx context.Context) {
 	fmt.Println("[App] Shutting down KubeManager Lite...")
+
+	if a.eventWatcher != nil {
+		a.eventWatcher.Stop()
+	}
 
 	if a.logStreamer != nil {
 		a.logStreamer.StopAll()
@@ -76,6 +83,13 @@ func (a *App) shutdown(ctx context.Context) {
 // Emits a "stats:update" event directly to the frontend — no polling needed.
 func (a *App) EmitStats(update dockerpkg.StatsUpdate) {
 	runtime.EventsEmit(a.ctx, "stats:update", update)
+}
+
+// EmitLifecycle implements dockerpkg.LifecycleEmitter.
+// Fired on container start/stop/die/restart/pause/unpause/destroy.
+// The frontend listens to "container:lifecycle" and refreshes the list immediately.
+func (a *App) EmitLifecycle(event dockerpkg.LifecycleEvent) {
+	runtime.EventsEmit(a.ctx, "container:lifecycle", event)
 }
 
 // =============================================================================
