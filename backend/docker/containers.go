@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -40,6 +41,7 @@ type StatsStreamer struct {
 	client  *Client
 	emitter StatsEmitter
 	streams map[string]context.CancelFunc
+	mu      sync.RWMutex
 }
 
 func NewStatsStreamer(client *Client, emitter StatsEmitter) *StatsStreamer {
@@ -51,15 +53,22 @@ func NewStatsStreamer(client *Client, emitter StatsEmitter) *StatsStreamer {
 }
 
 func (ss *StatsStreamer) StartStream(containerID string) {
+	ss.mu.Lock()
 	if _, exists := ss.streams[containerID]; exists {
+		ss.mu.Unlock()
 		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ss.streams[containerID] = cancel
+	ss.mu.Unlock()
 
 	go func() {
-		defer delete(ss.streams, containerID)
+		defer func() {
+			ss.mu.Lock()
+			delete(ss.streams, containerID)
+			ss.mu.Unlock()
+		}()
 
 		if err := ss.streamStats(ctx, containerID); err != nil {
 			if ctx.Err() == nil {
@@ -70,6 +79,9 @@ func (ss *StatsStreamer) StartStream(containerID string) {
 }
 
 func (ss *StatsStreamer) StopStream(containerID string) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+
 	if cancel, exists := ss.streams[containerID]; exists {
 		cancel()
 		delete(ss.streams, containerID)
@@ -77,6 +89,9 @@ func (ss *StatsStreamer) StopStream(containerID string) {
 }
 
 func (ss *StatsStreamer) StopAll() {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+
 	for id, cancel := range ss.streams {
 		cancel()
 		delete(ss.streams, id)
