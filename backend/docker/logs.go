@@ -10,17 +10,21 @@ import (
 	"github.com/docker/docker/api/types/container"
 )
 
-// LogStreamer manages active log streams by container.
-// We use a map of cancel functions to be able to stop the stream of a container
-// the stream of a container when the user closes the logs tab.
+// LogHub is the interface accepted by LogStreamer to forward log messages.
+// Using an interface instead of *streaming.Hub allows mock injection in tests.
+type LogHub interface {
+	Send(msg streaming.LogMessage)
+}
+
+// LogStreamer manages active log streams per container.
 type LogStreamer struct {
 	client  *Client
-	hub     *streaming.Hub
+	hub     LogHub
 	streams map[string]context.CancelFunc
 }
 
-// NewLogStreamer creates a LogStreamer connected to the backpressure Hub.
-func NewLogStreamer(client *Client, hub *streaming.Hub) *LogStreamer {
+// NewLogStreamer creates a LogStreamer connected to the Hub.
+func NewLogStreamer(client *Client, hub LogHub) *LogStreamer {
 	return &LogStreamer{
 		client:  client,
 		hub:     hub,
@@ -28,36 +32,36 @@ func NewLogStreamer(client *Client, hub *streaming.Hub) *LogStreamer {
 	}
 }
 
-// StartStream starts the streaming of logs of a specific container.
-// Each container receives its own goroutine and cancel context.
+// StartStream inicia o streaming de logs de um container específico.
+// Cada container recebe sua própria goroutine e context de cancelamento.
 //
-// The flow is:
-//  1. Open log stream of Docker (follow=true, timestamps=true)
-//  2. Read line by line via bufio.Scanner
-//  3. Send each line to the central Hub (that applies the backpressure)
+// O fluxo é:
+//  1. Abre stream de logs do Docker (follow=true, timestamps=true)
+//  2. Lê linha a linha via bufio.Scanner
+//  3. Envia cada linha para o Hub central (que aplica o backpressure)
 //
-// If the stream is already active for this container, do not open a second one.
+// Se o stream já estiver ativo para este container, não abre um segundo.
 func (ls *LogStreamer) StartStream(containerID, containerName string) error {
-	// Avoid duplicate streams
+	// Evita streams duplicados
 	if _, exists := ls.streams[containerID]; exists {
 		return nil
 	}
 
-	// Context with cancel — we save the cancel func to be able to stop later
+	// Context com cancel — guardamos a cancel func para poder parar depois
 	ctx, cancel := context.WithCancel(context.Background())
 	ls.streams[containerID] = cancel
 
 	go func() {
 		defer func() {
-			// Cleanup: remove the stream from the map when closing
+			// Limpeza: remove o stream do map quando encerrar
 			delete(ls.streams, containerID)
 		}()
 
 		if err := ls.streamLogs(ctx, containerID, containerName); err != nil {
-			// We don't log context.Canceled — it is the expected behavior
-			// when the user stops the stream manually.
+			// Não logamos context.Canceled — é o comportamento esperado
+			// quando o usuário para o stream manualmente.
 			if ctx.Err() == nil {
-				fmt.Printf("[LogStreamer] Error in stream of %s: %v\n", containerName, err)
+				fmt.Printf("[LogStreamer] Erro no stream de %s: %v\n", containerName, err)
 			}
 		}
 	}()
@@ -65,15 +69,15 @@ func (ls *LogStreamer) StartStream(containerID, containerName string) error {
 	return nil
 }
 
-// StopStream stops the log stream of a container.
-// The context.Cancel() makes the reading goroutine naturally exit.
+// StopStream cancela o stream de logs de um container.
+// O context.Cancel() faz o goroutine de leitura encerrar naturalmente.
 func (ls *LogStreamer) StopStream(containerID string) {
 	if cancel, exists := ls.streams[containerID]; exists {
 		cancel()
 	}
 }
 
-// StopAll stops all active streams. Called on application shutdown.
+// StopAll cancela todos os streams ativos. Chamado no shutdown da aplicação.
 func (ls *LogStreamer) StopAll() {
 	for id, cancel := range ls.streams {
 		cancel()
@@ -81,7 +85,7 @@ func (ls *LogStreamer) StopAll() {
 	}
 }
 
-// ActiveStreams returns the IDs of containers with active streams.
+// ActiveStreams retorna os IDs dos containers com streams ativos.
 func (ls *LogStreamer) ActiveStreams() []string {
 	ids := make([]string, 0, len(ls.streams))
 	for id := range ls.streams {
@@ -90,36 +94,36 @@ func (ls *LogStreamer) ActiveStreams() []string {
 	return ids
 }
 
-// streamLogs reads the continuous logs of a container.
-// This function runs inside a goroutine and blocks until:
-//   - The context is canceled (user closes the tab)
-//   - The container is stopped
-//   - An I/O error occurs
+// streamLogs faz a leitura contínua dos logs de um container.
+// Esta função roda dentro de uma goroutine e bloqueia até:
+//   - O context ser cancelado (usuário fecha a aba)
+//   - O container ser parado
+//   - Um erro de I/O ocorrer
 func (ls *LogStreamer) streamLogs(ctx context.Context, containerID, containerName string) error {
 	reader, err := ls.client.cli.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true, // keeps the connection open (tail -f)
-		Timestamps: true, // includes timestamp in each line
-		Tail:       "50", // last 50 lines when connecting (does not overload at the beginning)
+		Follow:     true, // mantém a conexão aberta (tail -f)
+		Timestamps: true, // inclui timestamp em cada linha
+		Tail:       "50", // últimas 50 linhas ao conectar (não sobrecarrega no início)
 	})
 	if err != nil {
-		return fmt.Errorf("failed to open log stream: %w", err)
+		return fmt.Errorf("erro ao abrir stream de logs: %w", err)
 	}
 	defer reader.Close()
 
-	// bufio.Scanner reads line by line efficiently.
-	// Docker multiplexes stdout/stderr into a single stream with an 8 byte header.
-	// The Scanner removes these headers automatically for us.
+	// bufio.Scanner lê linha a linha de forma eficiente.
+	// O Docker multiplexes stdout/stderr num único stream com um header de 8 bytes.
+	// O Scanner remove esses headers automaticamente para nós.
 	scanner := bufio.NewScanner(reader)
 
-	// Increase the default buffer to handle very long log lines
-	const maxLineSize = 1024 * 1024 // 1MB per line
+	// Aumenta o buffer padrão para lidar com linhas de log muito longas
+	const maxLineSize = 1024 * 1024 // 1MB por linha
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, maxLineSize)
 
 	for scanner.Scan() {
-		// Check if the context was canceled before processing the next line
+		// Verifica se o context foi cancelado antes de processar a próxima linha
 		select {
 		case <-ctx.Done():
 			return nil
@@ -128,8 +132,8 @@ func (ls *LogStreamer) streamLogs(ctx context.Context, containerID, containerNam
 
 		line := scanner.Text()
 
-		// Remove the 8 byte header from the Docker multiplexer if present
-		// Format: [STREAM_TYPE(1)] [0 0 0(3)] [SIZE(4)] [PAYLOAD]
+		// Remove o header de 8 bytes do multiplexer do Docker se presente
+		// Formato: [STREAM_TYPE(1)] [0 0 0(3)] [SIZE(4)] [PAYLOAD]
 		if len(line) > 8 {
 			line = line[8:]
 		}
@@ -144,9 +148,9 @@ func (ls *LogStreamer) streamLogs(ctx context.Context, containerID, containerNam
 
 	if err := scanner.Err(); err != nil {
 		if ctx.Err() != nil {
-			return nil // expected cancellation
+			return nil // cancelamento esperado
 		}
-		return fmt.Errorf("error in reading the stream: %w", err)
+		return fmt.Errorf("erro na leitura do stream: %w", err)
 	}
 
 	return nil

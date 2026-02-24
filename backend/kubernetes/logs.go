@@ -11,16 +11,22 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// PodLogHub is the interface accepted by PodLogStreamer to forward log messages.
+type PodLogHub interface {
+	Send(msg streaming.LogMessage)
+}
+
 // PodLogStreamer manages active log streams per pod.
 // Mirrors the same architecture as the Docker LogStreamer —
 // each pod gets its own goroutine and context cancel function.
 type PodLogStreamer struct {
 	client  *Client
-	hub     *streaming.Hub
-	streams map[string]context.CancelFunc
+	hub     PodLogHub
+	streams map[string]context.CancelFunc // key: namespace/podName
 }
 
-func NewPodLogStreamer(client *Client, hub *streaming.Hub) *PodLogStreamer {
+// NewPodLogStreamer creates a PodLogStreamer connected to the Hub.
+func NewPodLogStreamer(client *Client, hub PodLogHub) *PodLogStreamer {
 	return &PodLogStreamer{
 		client:  client,
 		hub:     hub,
@@ -28,15 +34,19 @@ func NewPodLogStreamer(client *Client, hub *streaming.Hub) *PodLogStreamer {
 	}
 }
 
+// streamKey returns a unique key for a pod stream.
 func streamKey(namespace, podName string) string {
 	return namespace + "/" + podName
 }
 
+// StartStream opens a log stream for a pod.
+// If the pod has multiple containers, it streams the first one by default.
+// Pass containerName to target a specific container.
 func (ps *PodLogStreamer) StartStream(namespace, podName, containerName string) error {
 	key := streamKey(namespace, podName)
 
 	if _, exists := ps.streams[key]; exists {
-		return nil
+		return nil // stream already active
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,6 +65,7 @@ func (ps *PodLogStreamer) StartStream(namespace, podName, containerName string) 
 	return nil
 }
 
+// StopStream cancels the log stream for a pod.
 func (ps *PodLogStreamer) StopStream(namespace, podName string) {
 	key := streamKey(namespace, podName)
 	if cancel, exists := ps.streams[key]; exists {
@@ -63,6 +74,7 @@ func (ps *PodLogStreamer) StopStream(namespace, podName string) {
 	}
 }
 
+// StopAll cancels all active pod log streams. Called on app shutdown.
 func (ps *PodLogStreamer) StopAll() {
 	for key, cancel := range ps.streams {
 		cancel()
@@ -74,11 +86,12 @@ func (ps *PodLogStreamer) StopAll() {
 // each line to the Hub, using the same backpressure mechanism as Docker logs.
 func (ps *PodLogStreamer) streamLogs(ctx context.Context, namespace, podName, containerName string) error {
 	opts := &corev1.PodLogOptions{
-		Follow:     true,
-		TailLines:  int64Ptr(50),
-		Timestamps: true,
+		Follow:     true,         // keep stream open (equivalent to tail -f)
+		TailLines:  int64Ptr(50), // last 50 lines on connect
+		Timestamps: true,         // include timestamps in each line
 	}
 
+	// Target a specific container if provided
 	if containerName != "" {
 		opts.Container = containerName
 	}
@@ -91,6 +104,7 @@ func (ps *PodLogStreamer) streamLogs(ctx context.Context, namespace, podName, co
 	}
 	defer stream.Close()
 
+	// Use the pod name as the display name in the LogViewer
 	displayName := fmt.Sprintf("%s/%s", namespace, podName)
 
 	scanner := bufio.NewScanner(stream)
@@ -116,8 +130,9 @@ func (ps *PodLogStreamer) streamLogs(ctx context.Context, namespace, podName, co
 
 	if err := scanner.Err(); err != nil {
 		if ctx.Err() != nil {
-			return nil
+			return nil // expected cancellation
 		}
+		// io.EOF is normal when the pod terminates
 		if err == io.EOF {
 			return nil
 		}
