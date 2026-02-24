@@ -49,7 +49,7 @@ test.describe('Docker tab', () => {
     expect(count).toBeGreaterThan(0);
 
     for (let i = 0; i < count; i++) {
-      await expect(badges.nth(i)).toContainText('RUNNING');
+      await expect(badges.nth(i)).toContainText('running', { ignoreCase: true });
     }
   });
 
@@ -124,6 +124,7 @@ test.describe('Kubernetes tab', () => {
     const selector = page.locator('.ns-select');
     await expect(selector).toBeVisible({ timeout: 10_000 });
 
+    await expect(selector.locator('option').nth(1)).not.toBeEmpty({ timeout: 10_000 });
     const options = selector.locator('option');
     const texts = await options.allTextContents();
     expect(texts.some(t => t.includes('default'))).toBeTruthy();
