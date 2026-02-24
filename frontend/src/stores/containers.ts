@@ -32,14 +32,38 @@ export interface LogMessage {
 
 export type AppTab = 'docker' | 'kubernetes';
 
+export type ConnectionState = 'connected' | 'reconnecting' | 'failed' | 'unknown';
+
+export interface ConnectionStatus {
+  state: ConnectionState;
+  message: string;
+  retryIn: number;
+  attempt: number;
+}
+
 // ─── Stores ───────────────────────────────────────────────────────────────────
 
+// List of all running containers
 export const containers = writable<ContainerInfo[]>([]);
+
+// ID of the container whose logs are currently open (null = log panel closed)
 export const activeLogContainerId = writable<string | null>(null);
+
+// Log lines per container — keyed by container ID
 export const logLines = writable<Record<string, string[]>>({});
+
+// Active tab
 export const activeTab = writable<AppTab>('docker');
+
+// Connection status
 export const dockerConnected = writable<boolean>(false);
 export const k8sConnected = writable<boolean>(false);
+
+// Detailed reconnection status per source
+export const dockerStatus = writable<ConnectionStatus>({ state: 'unknown', message: '', retryIn: 0, attempt: 0 });
+export const k8sStatus = writable<ConnectionStatus>({ state: 'unknown', message: '', retryIn: 0, attempt: 0 });
+
+// Loading state for the container list
 export const containersLoading = writable<boolean>(false);
 
 // ─── Derived ──────────────────────────────────────────────────────────────────

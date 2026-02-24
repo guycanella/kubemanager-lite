@@ -8,17 +8,19 @@ import (
 
 	dockerpkg "kubemanager_lite/backend/docker"
 	k8spkg "kubemanager_lite/backend/kubernetes"
+	reconnectpkg "kubemanager_lite/backend/reconnect"
 	"kubemanager_lite/backend/streaming"
 )
 
 type App struct {
-	ctx           context.Context
-	hub           *streaming.Hub
-	dockerClient  *dockerpkg.Client
-	k8sClient     *k8spkg.Client
-	logStreamer   *dockerpkg.LogStreamer
-	statsStreamer *dockerpkg.StatsStreamer
-	eventWatcher  *dockerpkg.EventWatcher
+	ctx            context.Context
+	hub            *streaming.Hub
+	dockerClient   *dockerpkg.Client
+	k8sClient      *k8spkg.Client
+	logStreamer    *dockerpkg.LogStreamer
+	statsStreamer  *dockerpkg.StatsStreamer
+	eventWatcher   *dockerpkg.EventWatcher
+	podLogStreamer *k8spkg.PodLogStreamer
 }
 
 func NewApp() *App {
@@ -49,6 +51,7 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Printf("[App] Info: Kubernetes not configured: %v\n", err)
 	} else {
 		a.k8sClient = k8sClient
+		a.podLogStreamer = k8spkg.NewPodLogStreamer(k8sClient, a.hub)
 		fmt.Println("[App] Kubernetes connected successfully")
 	}
 }
@@ -59,6 +62,10 @@ func (a *App) shutdown(ctx context.Context) {
 
 	if a.eventWatcher != nil {
 		a.eventWatcher.Stop()
+	}
+
+	if a.podLogStreamer != nil {
+		a.podLogStreamer.StopAll()
 	}
 
 	if a.logStreamer != nil {
@@ -90,6 +97,12 @@ func (a *App) EmitStats(update dockerpkg.StatsUpdate) {
 // The frontend listens to "container:lifecycle" and refreshes the list immediately.
 func (a *App) EmitLifecycle(event dockerpkg.LifecycleEvent) {
 	runtime.EventsEmit(a.ctx, "container:lifecycle", event)
+}
+
+// EmitConnectionStatus implements reconnect.StatusEmitter.
+// Fired on every connection state change (reconnecting, connected, failed).
+func (a *App) EmitConnectionStatus(status reconnectpkg.Status) {
+	runtime.EventsEmit(a.ctx, "connection:status", status)
 }
 
 // =============================================================================
@@ -179,6 +192,19 @@ func (a *App) ListPods(namespace string) ([]k8spkg.PodInfo, error) {
 		return nil, fmt.Errorf("Kubernetes is not configured")
 	}
 	return a.k8sClient.ListPods(a.ctx, namespace)
+}
+
+func (a *App) StartPodLogStream(namespace, podName, containerName string) error {
+	if a.podLogStreamer == nil {
+		return fmt.Errorf("Kubernetes is not configured")
+	}
+	return a.podLogStreamer.StartStream(namespace, podName, containerName)
+}
+
+func (a *App) StopPodLogStream(namespace, podName string) {
+	if a.podLogStreamer != nil {
+		a.podLogStreamer.StopStream(namespace, podName)
+	}
 }
 
 // =============================================================================

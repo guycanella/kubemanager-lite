@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"kubemanager_lite/backend/reconnect"
+
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 )
@@ -16,10 +18,14 @@ type LifecycleEvent struct {
 }
 
 // LifecycleEmitter is the interface used to push lifecycle events to the frontend.
+// The App struct implements both LifecycleEmitter and reconnect.StatusEmitter.
 type LifecycleEmitter interface {
 	EmitLifecycle(event LifecycleEvent)
+	reconnect.StatusEmitter
 }
 
+// EventWatcher watches the Docker daemon event stream and notifies the frontend
+// of container lifecycle changes in real time.
 type EventWatcher struct {
 	client  *Client
 	emitter LifecycleEmitter
@@ -34,27 +40,34 @@ func NewEventWatcher(client *Client, emitter LifecycleEmitter) *EventWatcher {
 	}
 }
 
+// Start begins watching Docker events in a background goroutine.
+// If the event stream drops (e.g. Docker daemon restart), it automatically
+// reconnects using exponential backoff.
 func (ew *EventWatcher) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	ew.cancel = cancel
 
 	go func() {
-		if err := ew.watch(ctx); err != nil {
-			if ctx.Err() == nil {
-				fmt.Printf("[EventWatcher] Error watching Docker events: %v\n", err)
-			}
+		err := reconnect.WithBackoff(ctx, "Docker", ew.emitter, func(ctx context.Context) error {
+			return ew.watch(ctx)
+		})
+		if err != nil && ctx.Err() == nil {
+			fmt.Printf("[EventWatcher] Permanent failure watching Docker events: %v\n", err)
 		}
 	}()
 }
 
+// Stop cancels the event stream and any pending reconnect attempts.
 func (ew *EventWatcher) Stop() {
 	if ew.cancel != nil {
 		ew.cancel()
 	}
 }
 
+// watch subscribes to the Docker event stream and forwards container
+// lifecycle events to the frontend. Returns an error if the stream drops,
+// which triggers a reconnect attempt from the caller (WithBackoff).
 func (ew *EventWatcher) watch(ctx context.Context) error {
-	// Filter: only container events, only lifecycle actions
 	filter := filters.NewArgs(
 		filters.Arg("type", string(events.ContainerEventType)),
 		filters.Arg("event", "start"),
@@ -76,6 +89,7 @@ func (ew *EventWatcher) watch(ctx context.Context) error {
 			return nil
 
 		case err := <-errCh:
+			// Return the error so WithBackoff can trigger a reconnect
 			return fmt.Errorf("event stream closed: %w", err)
 
 		case msg := <-eventCh:

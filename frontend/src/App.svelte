@@ -6,6 +6,7 @@
   import ContainerList from './components/ContainerList.svelte';
   import LogViewer from './components/LogViewer.svelte';
   import PodList from './components/PodList.svelte';
+  import Toast from './components/Toast.svelte';
 
   // ─── Connection check on mount ──────────────────────────────────────────────
 
@@ -74,10 +75,23 @@
 
     <!-- Kubernetes tab -->
     {:else}
-      <PodList />
+      <div class="pane-layout" class:split={$activeLogContainerId !== null}>
+        <div class="pane-main">
+          <PodList />
+        </div>
+        {#if $activeLogContainerId}
+          <div class="pane-logs">
+            <LogViewer />
+          </div>
+        {/if}
+      </div>
     {/if}
 
   </div>
+
+  <!-- Global toast notifications (connection status + action errors) -->
+  <Toast />
+
 </div>
 
 <style>
@@ -148,7 +162,6 @@
   /* ─── Titlebar ─────────────────────────────────────────────────────────────── */
   .titlebar {
     display: flex;
-    gap: 12px;
     align-items: center;
     height: 52px;
     background: var(--surface);
