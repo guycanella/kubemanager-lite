@@ -15,6 +15,7 @@
     containersLoading,
     activeLogContainerId,
     applyStatsUpdate,
+    addToast,
     type StatsUpdate,
   } from '../stores/containers';
   import StatusBadge from './StatusBadge.svelte';
@@ -68,7 +69,8 @@
       if (action === 'restart') await RestartContainer(id);
       await loadContainers();
     } catch (err) {
-      console.error(`[ContainerList] Failed to ${action} container ${id}:`, err);
+      const name = $containers.find(c => c.id === id)?.name ?? id.slice(0, 12);
+      addToast(`Failed to ${action} ${name}: ${err}`, 'error');
     } finally {
       actionLoading = { ...actionLoading, [id]: false };
     }
@@ -84,10 +86,13 @@
   onMount(() => {
     loadContainers();
 
+    // Subscribe to real-time stats pushed by the Go backend
     EventsOn('stats:update', (update: StatsUpdate) => {
       applyStatsUpdate(update);
     });
 
+    // Subscribe to container lifecycle events (start/stop/die/restart/etc.)
+    // Fired instantly by the Docker event stream — no polling delay
     EventsOn('container:lifecycle', () => {
       loadContainers();
     });
@@ -453,6 +458,7 @@
 
   .bar-fill {
     height: 100%;
+    min-width: 3px;
     border-radius: 2px;
     transition: width 0.6s ease, background 0.3s;
   }

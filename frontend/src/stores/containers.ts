@@ -75,7 +75,29 @@ export const activeContainer = derived(
     $activeId ? $containers.find(c => c.id === $activeId) ?? null : null
 );
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+export interface Toast {
+  id: number;
+  type: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+  persistent: boolean;
+}
+
+let _nextToastId = 0;
+export const toasts = writable<Toast[]>([]);
+
+export function addToast(message: string, type: Toast['type'] = 'info', persistent = false) {
+  const id = _nextToastId++;
+  toasts.update(all => [...all, { id, type, message, persistent }]);
+  if (!persistent) {
+    setTimeout(() => dismissToast(id), 4000);
+  }
+}
+
+export function dismissToast(id: number) {
+  toasts.update(all => all.filter(t => t.id !== id));
+}
 
 // Apply a StatsUpdate to the containers store — called on every "stats:update" event
 export function applyStatsUpdate(update: StatsUpdate) {

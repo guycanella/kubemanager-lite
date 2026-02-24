@@ -21,6 +21,7 @@ type App struct {
 	statsStreamer  *dockerpkg.StatsStreamer
 	eventWatcher   *dockerpkg.EventWatcher
 	podLogStreamer *k8spkg.PodLogStreamer
+	clusterWatcher *k8spkg.ClusterWatcher
 }
 
 func NewApp() *App {
@@ -52,6 +53,8 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		a.k8sClient = k8sClient
 		a.podLogStreamer = k8spkg.NewPodLogStreamer(k8sClient, a.hub)
+		a.clusterWatcher = k8spkg.NewClusterWatcher(&a.k8sClient, a)
+		a.clusterWatcher.Start()
 		fmt.Println("[App] Kubernetes connected successfully")
 	}
 }
@@ -66,6 +69,10 @@ func (a *App) shutdown(ctx context.Context) {
 
 	if a.podLogStreamer != nil {
 		a.podLogStreamer.StopAll()
+	}
+
+	if a.clusterWatcher != nil {
+		a.clusterWatcher.Stop()
 	}
 
 	if a.logStreamer != nil {

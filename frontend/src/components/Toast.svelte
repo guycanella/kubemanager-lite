@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
-    import { dockerConnected, k8sConnected, dockerStatus, k8sStatus } from '../stores/containers';
+    import { dockerConnected, k8sConnected, dockerStatus, k8sStatus, toasts, addToast, dismissToast } from '../stores/containers';
   
     interface ConnectionEvent {
       source: string;
@@ -11,47 +11,18 @@
       attempt: number;
     }
   
-    // ─── Toast queue ─────────────────────────────────────────────────────────────
-  
-    interface Toast {
-      id: number;
-      type: 'success' | 'error' | 'warning' | 'info';
-      message: string;
-      persistent: boolean; // persistent toasts stay until dismissed
-    }
-  
-    let toasts: Toast[] = [];
-    let nextId = 0;
-  
-    export function addToast(message: string, type: Toast['type'] = 'info', persistent = false) {
-      const id = nextId++;
-      toasts = [...toasts, { id, type, message, persistent }];
-  
-      if (!persistent) {
-        setTimeout(() => dismiss(id), 4000);
-      }
-    }
-  
-    function dismiss(id: number) {
-      toasts = toasts.filter(t => t.id !== id);
-    }
-  
-    // ─── Reconnect countdown ─────────────────────────────────────────────────────
-  
-    // Active reconnect toasts per source — keyed so we replace instead of stack
+    // Reconnect toast IDs per source — so we replace instead of stack
     let reconnectToastIds: Record<string, number> = {};
   
     function handleConnectionEvent(event: ConnectionEvent) {
       const source = event.source;
   
       if (event.state === 'connected') {
-        // Remove the reconnecting toast if present
         if (reconnectToastIds[source] !== undefined) {
-          dismiss(reconnectToastIds[source]);
+          dismissToast(reconnectToastIds[source]);
           delete reconnectToastIds[source];
         }
   
-        // Update stores
         if (source === 'Docker') {
           dockerConnected.set(true);
           dockerStatus.set({ state: 'connected', message: event.message, retryIn: 0, attempt: 0 });
@@ -65,7 +36,6 @@
       }
   
       if (event.state === 'reconnecting') {
-        // Update stores
         if (source === 'Docker') {
           dockerConnected.set(false);
           dockerStatus.set({ state: 'reconnecting', message: event.message, retryIn: event.retryIn, attempt: event.attempt });
@@ -74,23 +44,15 @@
           k8sStatus.set({ state: 'reconnecting', message: event.message, retryIn: event.retryIn, attempt: event.attempt });
         }
   
-        // Replace existing reconnect toast for this source
         if (reconnectToastIds[source] !== undefined) {
-          dismiss(reconnectToastIds[source]);
+          dismissToast(reconnectToastIds[source]);
         }
   
-        const id = nextId++;
+        const id = Math.floor(Math.random() * 1000000);
         reconnectToastIds[source] = id;
-        toasts = [...toasts, {
-          id,
-          type: 'warning',
-          message: event.message,
-          persistent: true, // stays until connected or dismissed
-        }];
+        toasts.update(all => [...all, { id, type: 'warning', message: event.message, persistent: true }]);
       }
     }
-  
-    // ─── Lifecycle ───────────────────────────────────────────────────────────────
   
     onMount(() => {
       EventsOn('connection:status', handleConnectionEvent);
@@ -100,8 +62,6 @@
       EventsOff('connection:status');
     });
   
-    // ─── Icon helpers ────────────────────────────────────────────────────────────
-  
     const icons = {
       success: `<polyline points="20 6 9 17 4 12"/>`,
       error:   `<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>`,
@@ -110,16 +70,15 @@
     };
   </script>
   
-  <!-- ─── Toast container ──────────────────────────────────────────────────────── -->
-  {#if toasts.length > 0}
+  {#if $toasts.length > 0}
     <div class="toast-container">
-      {#each toasts as toast (toast.id)}
+      {#each $toasts as toast (toast.id)}
         <div class="toast {toast.type}" role="alert">
           <svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             {@html icons[toast.type]}
           </svg>
           <span class="toast-message">{toast.message}</span>
-          <button class="toast-close" on:click={() => dismiss(toast.id)}>
+          <button class="toast-close" on:click={() => dismissToast(toast.id)}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -185,9 +144,7 @@
       color: var(--cyan);
     }
   
-    .toast-icon {
-      flex-shrink: 0;
-    }
+    .toast-icon { flex-shrink: 0; }
   
     .toast-message {
       flex: 1;
@@ -209,7 +166,5 @@
       transition: color 0.15s;
     }
   
-    .toast-close:hover {
-      color: var(--text);
-    }
+    .toast-close:hover { color: var(--text); }
   </style>
