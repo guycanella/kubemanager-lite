@@ -11,9 +11,9 @@
   // ─── Connection check on mount ──────────────────────────────────────────────
 
   onMount(async () => {
-    const [docker, k8s] = await Promise.all([DockerStatus(), K8sStatus()]);
-    dockerConnected.set(docker);
-    k8sConnected.set(k8s);
+    const [docker, k8s] = await Promise.allSettled([DockerStatus(), K8sStatus()]);
+    dockerConnected.set(docker.status === 'fulfilled' && docker.value);
+    k8sConnected.set(k8s.status === 'fulfilled' && k8s.value);
   });
 </script>
 

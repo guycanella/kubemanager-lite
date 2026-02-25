@@ -219,6 +219,29 @@ jobs:
           Xvfb :99 -screen 0 1280x800x24 &
           echo "DISPLAY=:99" >> $GITHUB_ENV
 
+      # ── Spin up Docker + K8s infrastructure for E2E ──
+      - name: Start test container
+        run: |
+          docker run -d \
+            --name kubemanager-test \
+            --label ci=true \
+            alpine:latest \
+            sh -c "while true; do echo 'log line from ci container'; sleep 1; done"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kubemanager-ci
+          wait: 60s
+
+      - name: Deploy test pod
+        run: |
+          kubectl run kubemanager-test \
+            --image=alpine:latest \
+            --restart=Never \
+            -- sh -c "while true; do echo 'log line from ci pod'; sleep 1; done"
+          kubectl wait pod/kubemanager-test --for=condition=Ready --timeout=60s
+
       # `wails dev` starts both the Go backend and the Vite dev server.
       # We capture the URL it prints and export it for Playwright.
       - name: Start wails dev server
@@ -260,6 +283,10 @@ jobs:
       - name: Stop wails dev server
         if: always()
         run: kill $WAILS_PID 2>/dev/null || true
+
+      - name: Stop test container
+        if: always()
+        run: docker rm -f kubemanager-test || true
 
 # ─── Job: Build macOS ─────────────────────────────────────────────────────────
   build-macos:
