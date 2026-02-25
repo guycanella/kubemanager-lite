@@ -42,7 +42,8 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          args: --timeout=5m --allow-newer-go
+          install-mode: goinstall
+          args: --timeout=5m
 
       - name: svelte-check
         working-directory: frontend
