@@ -109,6 +109,7 @@ test.describe('Kubernetes tab', () => {
 
   test('switches to Kubernetes tab', async ({ page }) => {
     const k8sTab = page.locator('.tab', { hasText: 'Kubernetes' });
+    await k8sTab.click();
     await expect(k8sTab).toHaveClass(/active/);
   });
 
