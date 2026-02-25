@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 )
 
@@ -114,7 +113,7 @@ func (ss *StatsStreamer) streamStats(ctx context.Context, containerID string) er
 		default:
 		}
 
-		var stats types.StatsJSON
+		var stats container.StatsResponse
 		if err := decoder.Decode(&stats); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -185,7 +184,7 @@ func (c *Client) RestartContainer(ctx context.Context, containerID string) error
 
 // --- Internal helpers ---
 
-func calculateCPUPercent(stats *types.StatsJSON) float64 {
+func calculateCPUPercent(stats *container.StatsResponse) float64 {
 	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage) -
 		float64(stats.PreCPUStats.CPUUsage.TotalUsage)
 

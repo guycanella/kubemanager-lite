@@ -66,7 +66,7 @@ func toPodInfo(pod corev1.Pod) PodInfo {
 	}
 
 	// Creation date
-	if pod.CreationTimestamp.Time.IsZero() == false {
+	if !pod.CreationTimestamp.Time.IsZero() {
 		info.Age = pod.CreationTimestamp.Time.Unix()
 	}
 

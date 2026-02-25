@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 )
 
 // ─── calculateCPUPercent ──────────────────────────────────────────────────────
@@ -12,20 +12,20 @@ import (
 func TestCalculateCPUPercent(t *testing.T) {
 	tests := []struct {
 		name     string
-		stats    types.StatsJSON
+		stats    container.StatsResponse
 		expected float64
 	}{
 		{
 			name: "normal usage with 2 CPUs",
-			stats: types.StatsJSON{
-				Stats: types.Stats{
-					CPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 200_000_000},
+			stats: container.StatsResponse{
+				Stats: container.Stats{
+					CPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 200_000_000},
 						SystemUsage: 2_000_000_000,
 						OnlineCPUs:  2,
 					},
-					PreCPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 100_000_000},
+					PreCPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 100_000_000},
 						SystemUsage: 1_000_000_000,
 					},
 				},
@@ -34,15 +34,15 @@ func TestCalculateCPUPercent(t *testing.T) {
 		},
 		{
 			name: "zero usage",
-			stats: types.StatsJSON{
-				Stats: types.Stats{
-					CPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 100_000_000},
+			stats: container.StatsResponse{
+				Stats: container.Stats{
+					CPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 100_000_000},
 						SystemUsage: 1_000_000_000,
 						OnlineCPUs:  1,
 					},
-					PreCPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 100_000_000},
+					PreCPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 100_000_000},
 						SystemUsage: 1_000_000_000,
 					},
 				},
@@ -51,15 +51,15 @@ func TestCalculateCPUPercent(t *testing.T) {
 		},
 		{
 			name: "zero system delta returns 0",
-			stats: types.StatsJSON{
-				Stats: types.Stats{
-					CPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 200_000_000},
+			stats: container.StatsResponse{
+				Stats: container.Stats{
+					CPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 200_000_000},
 						SystemUsage: 1_000_000_000,
 						OnlineCPUs:  1,
 					},
-					PreCPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 100_000_000},
+					PreCPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 100_000_000},
 						SystemUsage: 1_000_000_000,
 					},
 				},
@@ -68,18 +68,18 @@ func TestCalculateCPUPercent(t *testing.T) {
 		},
 		{
 			name: "falls back to percpu count when OnlineCPUs is 0",
-			stats: types.StatsJSON{
-				Stats: types.Stats{
-					CPUStats: types.CPUStats{
-						CPUUsage: types.CPUUsage{
+			stats: container.StatsResponse{
+				Stats: container.Stats{
+					CPUStats: container.CPUStats{
+						CPUUsage: container.CPUUsage{
 							TotalUsage:  200_000_000,
 							PercpuUsage: []uint64{100_000_000, 100_000_000},
 						},
 						SystemUsage: 2_000_000_000,
 						OnlineCPUs:  0,
 					},
-					PreCPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 100_000_000},
+					PreCPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 100_000_000},
 						SystemUsage: 1_000_000_000,
 					},
 				},
@@ -88,15 +88,15 @@ func TestCalculateCPUPercent(t *testing.T) {
 		},
 		{
 			name: "high CPU usage",
-			stats: types.StatsJSON{
-				Stats: types.Stats{
-					CPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 900_000_000},
+			stats: container.StatsResponse{
+				Stats: container.Stats{
+					CPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 900_000_000},
 						SystemUsage: 1_000_000_000,
 						OnlineCPUs:  1,
 					},
-					PreCPUStats: types.CPUStats{
-						CPUUsage:    types.CPUUsage{TotalUsage: 0},
+					PreCPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 0},
 						SystemUsage: 0,
 					},
 				},

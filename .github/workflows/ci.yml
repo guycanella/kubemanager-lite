@@ -220,8 +220,8 @@ jobs:
           wails dev 2>&1 | tee /tmp/wails-dev.log &
           echo "WAILS_PID=$!" >> $GITHUB_ENV
 
-          for i in $(seq 1 60); do
-            URL=$(grep -oP 'http://localhost:\d+' /tmp/wails-dev.log | head -1)
+          for i in $(seq 1 120); do
+            URL=$(grep -oP 'http://localhost:\d+' /tmp/wails-dev.log | tail -1)
             if [ -n "$URL" ]; then
               echo "PLAYWRIGHT_BASE_URL=$URL" >> $GITHUB_ENV
               echo "Wails dev server ready at $URL"
@@ -231,7 +231,8 @@ jobs:
           done
 
           if [ -z "$URL" ]; then
-            echo "ERROR: wails dev server did not start within 60s"
+            echo "ERROR: wails dev server did not start within 120s"
+            echo "--- wails dev log ---"
             cat /tmp/wails-dev.log
             exit 1
           fi
