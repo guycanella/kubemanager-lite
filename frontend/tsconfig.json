@@ -1,6 +1,7 @@
 {
   "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
+    "types": ["node"],
     "target": "ESNext",
     "useDefineForClassFields": true,
     "module": "ESNext",
@@ -20,7 +21,9 @@
     "src/**/*.d.ts",
     "src/**/*.ts",
     "src/**/*.js",
-    "src/**/*.svelte"
+    "src/**/*.svelte",
+    "playwright.config.ts",
+    "e2e/**/*.ts"
   ],
   "references": [
     {

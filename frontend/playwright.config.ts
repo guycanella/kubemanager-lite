@@ -6,8 +6,8 @@ export default defineConfig({
   retries: 1,
   use: {
     // Wails dev server runs on this port during `wails dev`
-    baseURL: 'http://localhost:34115',
-    headless: false,
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:34115',
+    headless: process.env.CI ? true : false,
     viewport: { width: 1280, height: 800 },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

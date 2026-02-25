@@ -33,7 +33,7 @@
       const incoming = list ?? [];
 
       // Stop stats streams for containers no longer present
-      const incomingIds = new Set(incoming.map(c => c.id));
+      const incomingIds = new Set(incoming.map((c: { id: string }) => c.id));
       for (const id of activeStatStreams) {
         if (!incomingIds.has(id)) {
           StopStatsStream(id);
