@@ -55,10 +55,6 @@ jobs:
         working-directory: frontend
         run: npm run check
 
-      - name: tsc
-        working-directory: frontend
-        run: npx tsc --noEmit
-
 # ─── Job: Unit + Stress Tests ─────────────────────────────────────────────────
   test-unit:
     name: Unit + Stress Tests
@@ -270,7 +266,7 @@ jobs:
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
-        run: npx playwright test
+        run: npm run test:e2e
 
       - name: Upload Playwright report
         if: failure()
