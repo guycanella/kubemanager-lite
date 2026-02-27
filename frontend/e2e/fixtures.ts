@@ -47,7 +47,24 @@ export const test = base.extend({
         };
       }
       if (!(window as any).runtime) {
-        (window as any).runtime = {};
+        const noop = () => {};
+        (window as any).runtime = {
+          EventsOn:             noop,
+          EventsOnMultiple:     noop,
+          EventsOnce:           noop,
+          EventsOff:            noop,
+          EventsOffAll:         noop,
+          EventsEmit:           noop,
+          WindowToggleMaximise: noop,
+          WindowSetTitle:       noop,
+          LogPrint:             noop,
+          LogTrace:             noop,
+          LogDebug:             noop,
+          LogInfo:              noop,
+          LogWarning:           noop,
+          LogError:             noop,
+          LogFatal:             noop,
+        };
       }
     });
     await use(page);
