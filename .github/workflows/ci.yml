@@ -460,10 +460,16 @@ jobs:
       - name: Zip macOS apps
         run: |
           cd dist
+
+          mkdir -p arm64-staging
+          cp -r kubemanager_lite-macos-arm64.app arm64-staging/
           zip -r kubemanager_lite-${{ github.ref_name }}-macos-arm64.zip \
-            kubemanager_lite-macos-arm64.app
+            arm64-staging/
+
+          mkdir -p amd64-staging
+          cp -r kubemanager_lite-macos-amd64.app amd64-staging/
           zip -r kubemanager_lite-${{ github.ref_name }}-macos-amd64.zip \
-            kubemanager_lite-macos-amd64.app
+            amd64-staging/
 
       - name: Make Linux binary executable
         run: chmod +x dist/kubemanager_lite-linux-amd64
