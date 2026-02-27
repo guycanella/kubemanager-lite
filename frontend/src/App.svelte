@@ -1,19 +1,97 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { DockerStatus, K8sStatus } from '../wailsjs/go/main/App';
-  import { WindowToggleMaximise } from '../wailsjs/runtime/runtime';
+  import { WindowToggleMaximise, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
   import { activeTab, activeLogContainerId, dockerConnected, k8sConnected } from './stores/containers';
   import ContainerList from './components/ContainerList.svelte';
   import LogViewer from './components/LogViewer.svelte';
   import PodList from './components/PodList.svelte';
   import Toast from './components/Toast.svelte';
 
+  // ─── Connection status state ────────────────────────────────────────────────
+
+  type ConnState = 'connected' | 'reconnecting' | 'failed' | 'unknown';
+
+  interface SourceStatus {
+    state:   ConnState;
+    message: string;
+    retryIn: number;
+    attempt: number;
+  }
+
+  let dockerStatus: SourceStatus = { state: 'unknown', message: '', retryIn: 0, attempt: 0 };
+  let k8sStatus:    SourceStatus = { state: 'unknown', message: '', retryIn: 0, attempt: 0 };
+
+  let dockerTick: ReturnType<typeof setInterval> | null = null;
+  let k8sTick:    ReturnType<typeof setInterval> | null = null;
+
+  function startCountdown(source: 'docker' | 'kubernetes', seconds: number) {
+    const clear = source === 'docker'
+      ? () => { if (dockerTick) { clearInterval(dockerTick); dockerTick = null; } }
+      : () => { if (k8sTick)    { clearInterval(k8sTick);    k8sTick    = null; } };
+
+    clear();
+
+    const tick = setInterval(() => {
+      if (source === 'docker') {
+        dockerStatus = { ...dockerStatus, retryIn: Math.max(0, dockerStatus.retryIn - 1) };
+      } else {
+        k8sStatus = { ...k8sStatus, retryIn: Math.max(0, k8sStatus.retryIn - 1) };
+      }
+    }, 1000);
+
+    if (source === 'docker') dockerTick = tick;
+    else                     k8sTick   = tick;
+  }
+
+  function stopCountdown(source: 'docker' | 'kubernetes') {
+    if (source === 'docker'     && dockerTick) { clearInterval(dockerTick); dockerTick = null; }
+    if (source === 'kubernetes' && k8sTick)    { clearInterval(k8sTick);   k8sTick   = null; }
+  }
+
   // ─── Connection check on mount ──────────────────────────────────────────────
 
   onMount(async () => {
     const [docker, k8s] = await Promise.allSettled([DockerStatus(), K8sStatus()]);
-    dockerConnected.set(docker.status === 'fulfilled' && docker.value);
-    k8sConnected.set(k8s.status === 'fulfilled' && k8s.value);
+
+    const dockerOk = docker.status === 'fulfilled' && docker.value;
+    const k8sOk    = k8s.status    === 'fulfilled' && k8s.value;
+
+    dockerConnected.set(dockerOk);
+    k8sConnected.set(k8sOk);
+
+    dockerStatus = { state: dockerOk ? 'connected' : 'unknown', message: '', retryIn: 0, attempt: 0 };
+    k8sStatus    = { state: k8sOk    ? 'connected' : 'unknown', message: '', retryIn: 0, attempt: 0 };
+
+    EventsOn('connection:status', (payload: SourceStatus & { source: string }) => {
+      const src = payload.source as 'docker' | 'kubernetes';
+      const next: SourceStatus = {
+        state:   payload.state   as ConnState,
+        message: payload.message ?? '',
+        retryIn: payload.retryIn ?? 0,
+        attempt: payload.attempt ?? 0,
+      };
+
+      if (src === 'docker') {
+        dockerStatus = next;
+        dockerConnected.set(next.state === 'connected');
+      } else {
+        k8sStatus = next;
+        k8sConnected.set(next.state === 'connected');
+      }
+
+      if (next.state === 'reconnecting') {
+        startCountdown(src, next.retryIn);
+      } else {
+        stopCountdown(src);
+      }
+    });
+  });
+
+  onDestroy(() => {
+    EventsOff('connection:status');
+    stopCountdown('docker');
+    stopCountdown('kubernetes');
   });
 </script>
 
@@ -38,7 +116,15 @@
           <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
         </svg>
         Docker
-        <span class="status-dot" class:connected={$dockerConnected} />
+        <span
+          class="status-dot"
+          class:connected={dockerStatus.state === 'connected'}
+          class:reconnecting={dockerStatus.state === 'reconnecting'}
+          class:failed={dockerStatus.state === 'failed'}
+          title={dockerStatus.state === 'reconnecting'
+            ? `Reconnecting… retry in ${dockerStatus.retryIn}s (attempt ${dockerStatus.attempt})`
+            : dockerStatus.message || ''}
+        />
       </button>
 
       <button
@@ -50,7 +136,15 @@
           <circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
         </svg>
         Kubernetes
-        <span class="status-dot" class:connected={$k8sConnected} />
+        <span
+          class="status-dot"
+          class:connected={k8sStatus.state === 'connected'}
+          class:reconnecting={k8sStatus.state === 'reconnecting'}
+          class:failed={k8sStatus.state === 'failed'}
+          title={k8sStatus.state === 'reconnecting'
+            ? `Reconnecting… retry in ${k8sStatus.retryIn}s (attempt ${k8sStatus.attempt})`
+            : k8sStatus.message || ''}
+        />
       </button>
     </nav>
 
@@ -238,6 +332,22 @@
   .status-dot.connected {
     background: var(--green);
     box-shadow: 0 0 4px var(--green);
+  }
+
+  .status-dot.reconnecting {
+    background: var(--amber);
+    box-shadow: 0 0 4px var(--amber);
+    animation: pulse-amber 1.2s ease-in-out infinite;
+  }
+
+  .status-dot.failed {
+    background: var(--red);
+    box-shadow: 0 0 4px var(--red);
+  }
+
+  @keyframes pulse-amber {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
   }
 
   .titlebar-right {

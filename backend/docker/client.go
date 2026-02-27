@@ -5,6 +5,9 @@ package docker
 import (
 	"context"
 	"fmt"
+	"time"
+
+	reconnectpkg "kubemanager_lite/backend/reconnect"
 
 	"github.com/docker/docker/client"
 )
@@ -51,4 +54,32 @@ func (c *Client) Close() error {
 // Raw exposes the underlying client for use in other packages (containers, logs).
 func (c *Client) Raw() *client.Client {
 	return c.cli
+}
+
+// Monitor starts a background health-check goroutine.
+// It pings the Docker daemon every 5 seconds. On failure, it enters
+// exponential backoff until the daemon is reachable again, emitting
+// connection status events throughout.
+func (c *Client) Monitor(ctx context.Context, emitter reconnectpkg.StatusEmitter) {
+	go c.monitorLoop(ctx, emitter)
+}
+
+func (c *Client) monitorLoop(ctx context.Context, emitter reconnectpkg.StatusEmitter) {
+	const healthInterval = 5 * time.Second
+	ticker := time.NewTicker(healthInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := c.Ping(ctx); err != nil {
+				_ = reconnectpkg.WithBackoff(ctx, "docker", emitter, func(ctx context.Context) error {
+					return c.Ping(ctx)
+				})
+				ticker.Reset(healthInterval)
+			}
+		}
+	}
 }

@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
+
+	reconnectpkg "kubemanager_lite/backend/reconnect"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -52,6 +55,36 @@ func (c *Client) IsAvailable(ctx context.Context) bool {
 // Raw exposes the underlying clientset for use in other packages.
 func (c *Client) Raw() *kubernetes.Clientset {
 	return c.clientset
+}
+
+// Monitor starts a background health-check goroutine.
+// It checks cluster availability every 10 seconds. On failure, it enters
+// exponential backoff until the cluster is reachable again.
+func (c *Client) Monitor(ctx context.Context, emitter reconnectpkg.StatusEmitter) {
+	go c.monitorLoop(ctx, emitter)
+}
+
+func (c *Client) monitorLoop(ctx context.Context, emitter reconnectpkg.StatusEmitter) {
+	const healthInterval = 10 * time.Second
+	ticker := time.NewTicker(healthInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !c.IsAvailable(ctx) {
+				_ = reconnectpkg.WithBackoff(ctx, "kubernetes", emitter, func(ctx context.Context) error {
+					if !c.IsAvailable(ctx) {
+						return fmt.Errorf("cluster unreachable")
+					}
+					return nil
+				})
+				ticker.Reset(healthInterval)
+			}
+		}
+	}
 }
 
 // defaultKubeconfigPath returns the default path for the kubeconfig.

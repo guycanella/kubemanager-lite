@@ -36,27 +36,78 @@ func (a *App) startup(ctx context.Context) {
 
 	dockerClient, err := dockerpkg.NewClient()
 	if err != nil {
-		fmt.Printf("[App] Warning: Docker not available: %v\n", err)
+		fmt.Printf("[App] Warning: Docker not available: %v — starting retry loop\n", err)
+		go a.retryDockerConnect(ctx)
 	} else {
-		a.dockerClient = dockerClient
-		a.logStreamer = dockerpkg.NewLogStreamer(dockerClient, a.hub)
-
-		a.statsStreamer = dockerpkg.NewStatsStreamer(dockerClient, a)
-		a.eventWatcher = dockerpkg.NewEventWatcher(dockerClient, a)
-		a.eventWatcher.Start()
+		a.setupDockerClient(dockerClient)
+		dockerClient.Monitor(ctx, a)
 		fmt.Println("[App] Docker connected successfully")
 	}
 
 	k8sClient, err := k8spkg.NewClient()
 	if err != nil {
-		fmt.Printf("[App] Info: Kubernetes not configured: %v\n", err)
+		fmt.Printf("[App] Info: Kubernetes not configured: %v — starting retry loop\n", err)
+		go a.retryK8sConnect(ctx)
 	} else {
-		a.k8sClient = k8sClient
-		a.podLogStreamer = k8spkg.NewPodLogStreamer(k8sClient, a.hub)
-		a.clusterWatcher = k8spkg.NewClusterWatcher(&a.k8sClient, a)
-		a.clusterWatcher.Start()
+		a.setupK8sClient(k8sClient)
+		k8sClient.Monitor(ctx, a)
 		fmt.Println("[App] Kubernetes connected successfully")
 	}
+}
+
+// setupDockerClient initialises all Docker-dependent components.
+// Safe to call from a goroutine — pointer assignment is atomic on 64-bit.
+func (a *App) setupDockerClient(cli *dockerpkg.Client) {
+	a.dockerClient = cli
+	a.logStreamer = dockerpkg.NewLogStreamer(cli, a.hub)
+	a.statsStreamer = dockerpkg.NewStatsStreamer(cli, a)
+	a.eventWatcher = dockerpkg.NewEventWatcher(cli, a)
+	a.eventWatcher.Start()
+}
+
+// setupK8sClient initialises all Kubernetes-dependent components.
+func (a *App) setupK8sClient(cli *k8spkg.Client) {
+	a.k8sClient = cli
+	a.podLogStreamer = k8spkg.NewPodLogStreamer(cli, a.hub)
+	a.clusterWatcher = k8spkg.NewClusterWatcher(&a.k8sClient, a)
+	a.clusterWatcher.Start()
+}
+
+// retryDockerConnect keeps trying to establish the initial Docker connection
+// using exponential backoff. Called only when startup fails.
+func (a *App) retryDockerConnect(ctx context.Context) {
+	_ = reconnectpkg.WithBackoff(ctx, "docker", a, func(ctx context.Context) error {
+		cli, err := dockerpkg.NewClient()
+		if err != nil {
+			return err
+		}
+		if err := cli.Ping(ctx); err != nil {
+			_ = cli.Close()
+			return err
+		}
+		a.setupDockerClient(cli)
+		cli.Monitor(ctx, a)
+		fmt.Println("[App] Docker connected after retry")
+		return nil
+	})
+}
+
+// retryK8sConnect keeps trying to establish the initial Kubernetes connection
+// using exponential backoff. Called only when startup fails.
+func (a *App) retryK8sConnect(ctx context.Context) {
+	_ = reconnectpkg.WithBackoff(ctx, "kubernetes", a, func(ctx context.Context) error {
+		cli, err := k8spkg.NewClient()
+		if err != nil {
+			return err
+		}
+		if !cli.IsAvailable(ctx) {
+			return fmt.Errorf("cluster unreachable")
+		}
+		a.setupK8sClient(cli)
+		cli.Monitor(ctx, a)
+		fmt.Println("[App] Kubernetes connected after retry")
+		return nil
+	})
 }
 
 // shutdown is called by Wails when the app closes.
