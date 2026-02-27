@@ -1,0 +1,74 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-tap:
+    name: Bump formula to ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: guycanella/kubemanager-lite
+        run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          gh release download "$TAG" \
+            --repo "$REPO" \
+            --pattern "kubemanager_lite-*-macos-arm64.zip" \
+            --pattern "kubemanager_lite-*-macos-amd64.zip" \
+            --pattern "kubemanager_lite-linux-amd64"
+
+      - name: Compute SHA256 hashes
+        run: |
+          VERSION=${{ env.VERSION }}
+          echo "SHA256_ARM64=$(sha256sum kubemanager_lite-v${VERSION}-macos-arm64.zip | awk '{print $1}')"   >> $GITHUB_ENV
+          echo "SHA256_AMD64=$(sha256sum kubemanager_lite-v${VERSION}-macos-amd64.zip | awk '{print $1}')"   >> $GITHUB_ENV
+          echo "SHA256_LINUX=$(sha256sum kubemanager_lite-linux-amd64              | awk '{print $1}')"   >> $GITHUB_ENV
+
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: guycanella/homebrew-kubemanager
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: tap
+
+      - name: Update formula
+        env:
+          VERSION: ${{ env.VERSION }}
+          SHA256_ARM64: ${{ env.SHA256_ARM64 }}
+          SHA256_AMD64: ${{ env.SHA256_AMD64 }}
+          SHA256_LINUX: ${{ env.SHA256_LINUX }}
+        run: |
+          FORMULA="tap/Formula/kubemanager-lite.rb"
+
+          # Bump version
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" "$FORMULA"
+
+          # Bump SHA256 hashes
+          sed -i "s/PLACEHOLDER_SHA256_MACOS_ARM64/${SHA256_ARM64}/" "$FORMULA"
+          sed -i "s/PLACEHOLDER_SHA256_MACOS_AMD64/${SHA256_AMD64}/" "$FORMULA"
+          sed -i "s/PLACEHOLDER_SHA256_LINUX_AMD64/${SHA256_LINUX}/"  "$FORMULA"
+
+          # On subsequent releases, replace the previous hashes (64-char hex strings)
+          # by matching the sha256 lines inside each on_macos/on_linux block precisely
+          perl -i -0777 -pe '
+            s/(on_macos.*?arm\?.*?sha256 ")[0-9a-f]{64}/$1'"${SHA256_ARM64}"'/s;
+            s/(on_macos.*?amd64.*?sha256 ")[0-9a-f]{64}/$1'"${SHA256_AMD64}"'/s;
+            s/(on_linux.*?sha256 ")[0-9a-f]{64}/$1'"${SHA256_LINUX}"'/s;
+          ' "$FORMULA"
+
+      - name: Commit and push
+        working-directory: tap
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/kubemanager-lite.rb
+          git commit -m "chore: bump kubemanager-lite to v${{ env.VERSION }}"
+          git push
