@@ -286,20 +286,15 @@ jobs:
         run: |
           wails build \
             -platform darwin/arm64 \
-            -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" \
-            -o kubemanager_lite-macos-arm64
+            -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}"
+          mv build/bin/kubemanager_lite.app build/bin/kubemanager_lite-macos-arm64.app
 
       - name: Build macOS (amd64)
         run: |
           wails build \
             -platform darwin/amd64 \
-            -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" \
-            -o kubemanager_lite-macos-amd64
-
-      # Debug: list actual build output to verify artifact paths
-      - name: List build output
-        if: always()
-        run: find build/bin -type f -o -type d | head -50
+            -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}"
+          mv build/bin/kubemanager_lite.app build/bin/kubemanager_lite-macos-amd64.app
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
