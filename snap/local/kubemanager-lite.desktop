@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=KubeManager Lite
+Comment=Docker container and Kubernetes pod manager
+Exec=kubemanager-lite
+Icon=kubemanager-lite
+Terminal=false
+Type=Application
+Categories=Development;System;
+StartupNotify=true
+StartupWMClass=kubemanager_lite
