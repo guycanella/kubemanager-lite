@@ -219,6 +219,9 @@ jobs:
         run: kill $VITE_PID 2>/dev/null || true
 
 # ─── Job: Build macOS ─────────────────────────────────────────────────────────
+#
+# Signs and notarizes the .app bundles using the Developer ID certificate.
+# Signing only runs on tag pushes — dev builds are unsigned.
   build-macos:
     name: Build (macOS)
     runs-on: macos-latest
@@ -257,6 +260,38 @@ jobs:
             echo "VERSION=dev-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
 
+      # Import the Developer ID certificate into a temporary keychain
+      # so codesign can access it without touching the system keychain.
+      - name: Import certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          # Create a temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          echo "$CERTIFICATE_P12" | base64 --decode > /tmp/certificate.p12
+          security import /tmp/certificate.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          rm /tmp/certificate.p12
+
+          # Allow codesign to access the keychain without UI prompts
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Make it the default keychain
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
       - name: Build macOS (arm64)
         run: |
           wails build \
@@ -270,6 +305,61 @@ jobs:
             -platform darwin/amd64 \
             -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}"
           mv build/bin/kubemanager_lite.app build/bin/kubemanager_lite-macos-amd64.app
+
+      # Sign both .app bundles with the Developer ID certificate
+      - name: Sign macOS apps
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          IDENTITY="Developer ID Application: Guilherme Canella ($APPLE_TEAM_ID)"
+
+          for APP in \
+            build/bin/kubemanager_lite-macos-arm64.app \
+            build/bin/kubemanager_lite-macos-amd64.app; do
+            codesign \
+              --force \
+              --deep \
+              --options runtime \
+              --sign "$IDENTITY" \
+              "$APP"
+            echo "Signed: $APP"
+            codesign --verify --strict "$APP" && echo "Verification OK"
+          done
+
+      # Zip before notarization — notarytool accepts .zip
+      - name: Zip macOS apps for notarization
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd build/bin
+          zip -r kubemanager_lite-macos-arm64-notarize.zip kubemanager_lite-macos-arm64.app
+          zip -r kubemanager_lite-macos-amd64-notarize.zip kubemanager_lite-macos-amd64.app
+
+      # Submit to Apple for notarization and wait for approval
+      - name: Notarize macOS apps
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for ZIP in \
+            build/bin/kubemanager_lite-macos-arm64-notarize.zip \
+            build/bin/kubemanager_lite-macos-amd64-notarize.zip; do
+            xcrun notarytool submit "$ZIP" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+            echo "Notarized: $ZIP"
+          done
+
+      # Staple the notarization ticket to each .app so it works offline
+      - name: Staple notarization ticket
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          xcrun stapler staple build/bin/kubemanager_lite-macos-arm64.app
+          xcrun stapler staple build/bin/kubemanager_lite-macos-amd64.app
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
