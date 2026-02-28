@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>kubemanager-lite</id>
-    <version>1.1.2</version>
+    <version>1.1.3</version>
     <title>KubeManager Lite</title>
     <authors>guycanella</authors>
     <projectUrl>https://github.com/guycanella/kubemanager-lite</projectUrl>
@@ -20,7 +20,7 @@ Features:
 - ~15 MB binary — no Electron, no Node.js runtime required
     </description>
     <summary>Lightweight desktop app for real-time Docker container and Kubernetes pod management.</summary>
-    <releaseNotes>https://github.com/guycanella/kubemanager-lite/releases/tag/v1.1.2</releaseNotes>
+    <releaseNotes>https://github.com/guycanella/kubemanager-lite/releases/tag/v1.1.3</releaseNotes>
     <copyright>Copyright 2026 guycanella</copyright>
     <tags>docker kubernetes containers pods monitoring devops wails go</tags>
     <dependencies />
