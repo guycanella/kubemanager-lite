@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>kubemanager-lite</id>
+    <version>1.1.2</version>
+    <title>KubeManager Lite</title>
+    <authors>guycanella</authors>
+    <projectUrl>https://github.com/guycanella/kubemanager-lite</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/guycanella/kubemanager-lite/main/assets/kubemanager_lite.png</iconUrl>
+    <licenseUrl>https://github.com/guycanella/kubemanager-lite/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>KubeManager Lite is a native desktop application that provides a unified interface for managing Docker containers and Kubernetes pods from a single window.
+
+Features:
+- Real-time CPU and memory monitoring (no polling)
+- Container lifecycle management: Start, Stop, Restart
+- Real-time log streaming via built-in terminal
+- Kubernetes pod listing with namespace selector
+- Auto-reconnect with exponential backoff
+- ~15 MB binary — no Electron, no Node.js runtime required
+    </description>
+    <summary>Lightweight desktop app for real-time Docker container and Kubernetes pod management.</summary>
+    <releaseNotes>https://github.com/guycanella/kubemanager-lite/releases/tag/v1.1.2</releaseNotes>
+    <copyright>Copyright 2026 guycanella</copyright>
+    <tags>docker kubernetes containers pods monitoring devops wails go</tags>
+    <dependencies />
+  </metadata>
+</package>
