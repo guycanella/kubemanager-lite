@@ -260,8 +260,6 @@ jobs:
             echo "VERSION=dev-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
 
-      # Import the Developer ID certificate into a temporary keychain
-      # so codesign can access it without touching the system keychain.
       - name: Import certificate
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -271,12 +269,10 @@ jobs:
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
-          # Create a temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Import certificate
           echo "$CERTIFICATE_P12" | base64 --decode > /tmp/certificate.p12
           security import /tmp/certificate.p12 \
             -k "$KEYCHAIN_PATH" \
@@ -284,12 +280,10 @@ jobs:
             -T /usr/bin/codesign
           rm /tmp/certificate.p12
 
-          # Allow codesign to access the keychain without UI prompts
           security set-key-partition-list \
             -S apple-tool:,apple: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Make it the default keychain
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
       - name: Build macOS (arm64)
@@ -306,7 +300,6 @@ jobs:
             -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}"
           mv build/bin/kubemanager_lite.app build/bin/kubemanager_lite-macos-amd64.app
 
-      # Sign both .app bundles with the Developer ID certificate
       - name: Sign macOS apps
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -321,13 +314,13 @@ jobs:
               --force \
               --deep \
               --options runtime \
+              --entitlements build/entitlements.plist \
               --sign "$IDENTITY" \
               "$APP"
             echo "Signed: $APP"
             codesign --verify --strict "$APP" && echo "Verification OK"
           done
 
-      # Zip before notarization — notarytool accepts .zip
       - name: Zip macOS apps for notarization
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -335,7 +328,6 @@ jobs:
           zip -r kubemanager_lite-macos-arm64-notarize.zip kubemanager_lite-macos-arm64.app
           zip -r kubemanager_lite-macos-amd64-notarize.zip kubemanager_lite-macos-amd64.app
 
-      # Submit to Apple for notarization and wait for approval
       - name: Notarize macOS apps
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -350,11 +342,11 @@ jobs:
               --apple-id "$APPLE_ID" \
               --password "$APPLE_APP_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" \
-              --wait
+              --wait \
+              --timeout 30m
             echo "Notarized: $ZIP"
           done
 
-      # Staple the notarization ticket to each .app so it works offline
       - name: Staple notarization ticket
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -483,6 +475,68 @@ jobs:
           name: linux-build
           path: build/bin/kubemanager_lite-linux-amd64
           retention-days: 7
+
+# ─── Job: Publish Chocolatey ──────────────────────────────────────────────────
+#
+# Packs and pushes the Chocolatey package on tag pushes only.
+# Runs independently of the macOS build — does not block on notarization.
+  publish-chocolatey:
+    name: Publish (Chocolatey)
+    runs-on: windows-latest
+    needs: [build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist/
+
+      - name: Set version
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update version and checksum in nuspec
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $exePath = "dist\kubemanager_lite-windows-amd64.exe"
+          $checksum = (Get-FileHash $exePath -Algorithm SHA256).Hash.ToLower()
+
+          # Update version in nuspec
+          $nuspec = Get-Content "distribution\chocolatey\kubemanager-lite.nuspec" -Raw
+          $nuspec = $nuspec -replace '<version>.*</version>', "<version>$version</version>"
+          Set-Content "distribution\chocolatey\kubemanager-lite.nuspec" $nuspec
+
+          # Update version and checksum in install script
+          $install = Get-Content "distribution\chocolatey\tools\chocolateyInstall.ps1" -Raw
+          $install = $install -replace "\`$version\s*=\s*'.*'", "`$version = '$version'"
+          $install = $install -replace 'checksum64\s*=\s*''.*''', "checksum64     = '$checksum'"
+          Set-Content "distribution\chocolatey\tools\chocolateyInstall.ps1" $install
+
+          Write-Host "Version: $version"
+          Write-Host "Checksum: $checksum"
+
+      - name: Pack Chocolatey package
+        shell: pwsh
+        working-directory: distribution/chocolatey
+        run: choco pack kubemanager-lite.nuspec
+
+      - name: Push to Chocolatey
+        shell: pwsh
+        working-directory: distribution/chocolatey
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          choco push "kubemanager-lite.$version.nupkg" `
+            --source https://push.chocolatey.org `
+            --api-key $env:CHOCOLATEY_API_KEY
 
 # ─── Job: Release ─────────────────────────────────────────────────────────────
   release:
