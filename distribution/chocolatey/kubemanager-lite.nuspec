@@ -6,6 +6,10 @@
     <title>KubeManager Lite</title>
     <authors>guycanella</authors>
     <projectUrl>https://github.com/guycanella/kubemanager-lite</projectUrl>
+    <packageSourceUrl>https://github.com/guycanella/kubemanager-lite/tree/main/distribution/chocolatey</packageSourceUrl>
+    <projectSourceUrl>https://github.com/guycanella/kubemanager-lite</projectSourceUrl>
+    <bugTrackerUrl>https://github.com/guycanella/kubemanager-lite/issues</bugTrackerUrl>
+    <docsUrl>https://github.com/guycanella/kubemanager-lite#readme</docsUrl>
     <iconUrl>https://raw.githubusercontent.com/guycanella/kubemanager-lite/main/assets/kubemanager_lite.png</iconUrl>
     <licenseUrl>https://github.com/guycanella/kubemanager-lite/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
