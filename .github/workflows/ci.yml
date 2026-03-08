@@ -41,6 +41,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Scaffold frontend/dist for embed
+        run: mkdir -p frontend/dist && touch frontend/dist/index.html
+
       - name: Generate Wails bindings
         run: wails generate module
 
