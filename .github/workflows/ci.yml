@@ -222,6 +222,8 @@ jobs:
 #
 # Signs and notarizes the .app bundles using the Developer ID certificate.
 # Signing only runs on tag pushes — dev builds are unsigned.
+# Uses ditto (not zip) to preserve macOS extended attributes required for
+# Gatekeeper to recognize the notarization ticket.
   build-macos:
     name: Build (macOS)
     runs-on: macos-latest
@@ -321,12 +323,16 @@ jobs:
             codesign --verify --strict "$APP" && echo "Verification OK"
           done
 
+      # ditto preserves extended attributes and resource forks required for
+      # Gatekeeper to recognize the notarization ticket after installation.
       - name: Zip macOS apps for notarization
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd build/bin
-          zip -r kubemanager_lite-macos-arm64-notarize.zip kubemanager_lite-macos-arm64.app
-          zip -r kubemanager_lite-macos-amd64-notarize.zip kubemanager_lite-macos-amd64.app
+          ditto -c -k --keepParent kubemanager_lite-macos-arm64.app \
+            kubemanager_lite-macos-arm64-notarize.zip
+          ditto -c -k --keepParent kubemanager_lite-macos-amd64.app \
+            kubemanager_lite-macos-amd64-notarize.zip
 
       - name: Notarize macOS apps
         if: startsWith(github.ref, 'refs/tags/v')
@@ -353,13 +359,24 @@ jobs:
           xcrun stapler staple build/bin/kubemanager_lite-macos-arm64.app
           xcrun stapler staple build/bin/kubemanager_lite-macos-amd64.app
 
+      # Use ditto for release zips too — preserves all macOS metadata so
+      # Gatekeeper recognizes the app as notarized after the user unzips it.
+      - name: Zip macOS apps for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd build/bin
+          ditto -c -k --keepParent kubemanager_lite-macos-arm64.app \
+            kubemanager_lite-${{ steps.version.outputs.VERSION }}-macos-arm64.zip
+          ditto -c -k --keepParent kubemanager_lite-macos-amd64.app \
+            kubemanager_lite-${{ steps.version.outputs.VERSION }}-macos-amd64.zip
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-builds
           path: |
-            build/bin/kubemanager_lite-macos-arm64.app
-            build/bin/kubemanager_lite-macos-amd64.app
+            build/bin/kubemanager_lite-${{ steps.version.outputs.VERSION }}-macos-arm64.zip
+            build/bin/kubemanager_lite-${{ steps.version.outputs.VERSION }}-macos-amd64.zip
           retention-days: 7
 
 # ─── Job: Build Windows ───────────────────────────────────────────────────────
@@ -479,7 +496,7 @@ jobs:
 # ─── Job: Publish Chocolatey ──────────────────────────────────────────────────
 #
 # Packs and pushes the Chocolatey package on tag pushes only.
-# Runs independently of the macOS build — does not block on notarization.
+# Depends on release so the GitHub Release exists before Chocolatey tests it.
   publish-chocolatey:
     name: Publish (Chocolatey)
     runs-on: windows-latest
@@ -569,14 +586,6 @@ jobs:
         with:
           name: linux-build
           path: dist/
-
-      - name: Zip macOS apps
-        run: |
-          cd dist
-          zip -r kubemanager_lite-${{ github.ref_name }}-macos-arm64.zip \
-            kubemanager_lite-macos-arm64.app
-          zip -r kubemanager_lite-${{ github.ref_name }}-macos-amd64.zip \
-            kubemanager_lite-macos-amd64.app
 
       - name: Make Linux binary executable
         run: chmod +x dist/kubemanager_lite-linux-amd64
