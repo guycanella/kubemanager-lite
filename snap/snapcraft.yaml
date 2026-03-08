@@ -65,7 +65,8 @@ parts:
 
   desktop-file:
     plugin: dump
-    source: local
+    source: snap/local
+    source-type: local
     organize:
       kubemanager-lite.desktop: usr/share/applications/kubemanager-lite.desktop
       kubemanager_lite.png: usr/share/icons/hicolor/256x256/apps/kubemanager-lite.png
