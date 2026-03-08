@@ -8,7 +8,7 @@ contact: guycanella@gmail.com
 issues: https://github.com/guycanella/kubemanager-lite/issues
 source-code: https://github.com/guycanella/kubemanager-lite
 website: https://github.com/guycanella/kubemanager-lite
-icon: local/kubemanager_lite.png
+icon: snap/local/kubemanager_lite.png
 description: |
   KubeManager Lite provides a unified interface for managing Docker containers
   and Kubernetes pods from a single window.
