@@ -1,64 +1,71 @@
-  name: guycanella-kubemanager
-  base: core22
-  version: "1.1.6"
-  summary: Lightweight desktop app for Docker container and Kubernetes pod management
-  description: |
-    KubeManager Lite provides a unified interface for managing Docker containers
-    and Kubernetes pods from a single window.
+name: guycanella-kubemanager
+base: core22
+version: "1.1.7"
+title: KubeManager Lite
+summary: Lightweight desktop app for Docker container and Kubernetes pod management
+license: MIT
+contact: guycanella@gmail.com
+issues: https://github.com/guycanella/kubemanager-lite/issues
+source-code: https://github.com/guycanella/kubemanager-lite
+website: https://github.com/guycanella/kubemanager-lite
+icon: local/kubemanager_lite.png
+description: |
+  KubeManager Lite provides a unified interface for managing Docker containers
+  and Kubernetes pods from a single window.
 
-    Features:
-    - Real-time CPU and memory monitoring
-    - Container lifecycle management: Start, Stop, Restart
-    - Real-time log streaming via built-in terminal
-    - Kubernetes pod listing with namespace selector
-    - Auto-reconnect with exponential backoff
-    - ~15 MB binary — no Electron, no Node.js runtime required
+  Features:
+  - Real-time CPU and memory monitoring
+  - Container lifecycle management: Start, Stop, Restart
+  - Real-time log streaming via built-in terminal
+  - Kubernetes pod listing with namespace selector
+  - Auto-reconnect with exponential backoff
+  - ~15 MB binary — no Electron, no Node.js runtime required
 
-  grade: stable
-  confinement: strict
+grade: stable
+confinement: strict
 
-  layout:
-    # Allow the app to read the kubeconfig from the home directory
-    /root/.kube:
-      bind: $SNAP_REAL_HOME/.kube
+layout:
+  # Allow the app to read the kubeconfig from the home directory
+  /root/.kube:
+    bind: $HOME/.kube
 
-  apps:
-    guycanella-kubemanager:
-      command: bin/kubemanager_lite
-      desktop: usr/share/applications/kubemanager-lite.desktop
-      plugs:
-        - desktop
-        - desktop-legacy
-        - wayland
-        - x11
-        - opengl
-        - home
-        - network
-        - network-bind
-        - docker                  # access to /var/run/docker.sock
-        - kubernetes-support      # access to ~/.kube/config and k8s APIs
-        - raw-usb
+apps:
+  guycanella-kubemanager:
+    command: bin/kubemanager_lite
+    desktop: usr/share/applications/kubemanager-lite.desktop
+    plugs:
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - opengl
+      - home
+      - network
+      - network-bind
+      - docker                  # access to /var/run/docker.sock
+      - kubernetes-support      # access to ~/.kube/config and k8s APIs
+      - raw-usb
 
-  parts:
-    kubemanager-lite:
-      plugin: dump
-      source: .
-      source-type: local
-      override-build: |
-        # Copy the pre-built binary produced by the CI into the snap
-        install -D -m 755 kubemanager_lite-linux-amd64 $SNAPCRAFT_PART_INSTALL/bin/kubemanager_lite
+parts:
+  kubemanager-lite:
+    plugin: dump
+    source: .
+    source-type: local
+    override-build: |
+      # Copy the pre-built binary produced by the CI into the snap
+      install -D -m 755 kubemanager_lite-linux-amd64 $SNAPCRAFT_PART_INSTALL/bin/kubemanager_lite
 
-      stage-packages:
-        - libgtk-3-0
-        - libwebkit2gtk-4.0-37
-        - libglib2.0-0
-        - libgdk-pixbuf2.0-0
-        - libpango-1.0-0
-        - libcairo2
+    stage-packages:
+      - libgtk-3-0
+      - libwebkit2gtk-4.0-37
+      - libglib2.0-0
+      - libgdk-pixbuf2.0-0
+      - libpango-1.0-0
+      - libcairo2
 
-    desktop-file:
-      plugin: dump
-      source: snap/local
-      organize:
-        kubemanager-lite.desktop: usr/share/applications/kubemanager-lite.desktop
-        kubemanager_lite.png: usr/share/icons/hicolor/256x256/apps/kubemanager-lite.png
+  desktop-file:
+    plugin: dump
+    source: local
+    organize:
+      kubemanager-lite.desktop: usr/share/applications/kubemanager-lite.desktop
+      kubemanager_lite.png: usr/share/icons/hicolor/256x256/apps/kubemanager-lite.png
