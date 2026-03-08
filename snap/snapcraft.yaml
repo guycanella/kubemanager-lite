@@ -24,11 +24,6 @@ description: |
 grade: stable
 confinement: strict
 
-layout:
-  # Allow the app to read the kubeconfig from the home directory
-  /root/.kube:
-    bind: $HOME/.kube
-
 apps:
   guycanella-kubemanager:
     command: bin/kubemanager_lite
